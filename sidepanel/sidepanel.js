@@ -139,6 +139,13 @@ const elements = {
     closeSettingsBtn: document.getElementById('close-settings-btn'),
     cancelSettingsBtn: document.getElementById('cancel-settings-btn'),
     saveSettingsBtn: document.getElementById('save-settings-btn'),
+
+    // Read Mode
+    readModeBtn: document.getElementById('read-mode-btn'),
+    readModeContent: document.getElementById('read-mode-content'),
+    closeReadModeBtn: document.getElementById('close-read-mode'),
+    profileSummaryText: document.getElementById('profile-summary'),
+
     providerGrid: document.getElementById('provider-grid'),
     apiKeySection: document.getElementById('api-key-section'),
     apiKeyInput: document.getElementById('api-key-input'),
@@ -298,9 +305,18 @@ function switchTab(tabId) {
  */
 function setupEventListeners() {
     elements.loadProfileBtn?.addEventListener('click', handleLoadProfile);
+    // Generate button
     elements.generateBtn?.addEventListener('click', handleGenerateClick);
+
+    // Read Mode
+    elements.readModeBtn?.addEventListener('click', handleReadModeClick);
+    elements.closeReadModeBtn?.addEventListener('click', () => {
+        elements.readModeContent.classList.add('hidden');
+    });
+
+    // Copy & Insert buttons
     elements.copyBtn?.addEventListener('click', handleCopyClick);
-    elements.insertBtn?.addEventListener('click', handleInsertClick);
+    elements.insertBtn?.addEventListener('click', handleCopyAndOpenChat);
     elements.regenerateBtn?.addEventListener('click', handleGenerateClick);
 
     // Track edits to message
@@ -596,12 +612,35 @@ function extractProfileData() {
             }
         }
 
-        // Extract headline
-        const headline = getText([
+        // Extract headline - Try robust selectors first
+        let headline = getText([
             '.text-body-medium',
             '.pv-text-details__left-panel .text-body-medium',
-            '[data-generated-suggestion-target="headline"]'
+            '[data-generated-suggestion-target="headline"]',
+            '.ph5 .text-body-medium', // Mobile/narrow view
+            '.pv-top-card--list-bullet > li:first-child', // Sometimes in list
+            '.artdeco-entity-lockup__subtitle', // Generic lockup
+            'h2.text-title-medium',
+            'div.text-body-medium.break-words'
         ]);
+
+        // Fallback: Extract from document title (format: "Name - Headline | LinkedIn")
+        if (!headline) {
+            try {
+                const title = document.title;
+                if (title.includes(' | LinkedIn')) {
+                    const namePart = title.split(' | LinkedIn')[0];
+                    // Split by " - " (space hyphen space) to find potential headline
+                    const parts = namePart.split(' - ');
+                    if (parts.length > 1) {
+                        // Assume everything after the first " - " is the headline/tagline
+                        headline = parts.slice(1).join(' - ').trim();
+                    }
+                }
+            } catch (e) {
+                console.log('Title fallback failed', e);
+            }
+        }
 
         // Extract "About" section
         let about = '';
@@ -804,6 +843,7 @@ async function handleGenerateClick() {
     updateStatus('loading', 'Generating...');
 
     try {
+        // Generate the message
         const message = await generateMessage(currentProfileData);
         currentGeneratedMessage = message;
 
@@ -823,6 +863,86 @@ async function handleGenerateClick() {
         showMessageEmpty();
     } finally {
         isGenerating = false;
+    }
+}
+
+/**
+ * Handle Read Profile button click
+ */
+async function handleReadModeClick() {
+    if (!currentProfileData) {
+        showToast('Please load a profile first', 'error');
+        return;
+    }
+
+    elements.readModeContent.classList.remove('hidden');
+    elements.profileSummaryText.innerHTML = '<div class="loading-spinner"></div> Analyzing profile...';
+
+    try {
+        const providerId = settings.provider;
+        const provider = LLM_PROVIDERS[providerId];
+
+        // Prepare prompt for summary
+        const systemPrompt = `You are a professional LinkedIn profile analyzer.
+Analyze the provided profile data and output a concise summary in the following format:
+**Professional Summary**: 2-3 sentences summarizing who they are.
+**Key Highlights**: Bullet points of their top skills or experiences.
+**Recent Activity**: A one-line summary of what they are posting about (if available).
+
+Keep it professional, concise, and easy to read.`;
+
+        // Use raw profile data, NOT the message generation prompt
+        const userPrompt = buildProfileContextString(currentProfileData);
+
+        // Call LLM
+        let summary = '';
+        if (providerId === 'gemini-nano') {
+            if (!self.ai || !self.ai.languageModel) {
+                throw new Error('Gemini Nano is not available in this browser.');
+            }
+            const session = await self.ai.languageModel.create({
+                systemPrompt: systemPrompt
+            });
+            summary = await session.prompt(userPrompt);
+            session.destroy();
+        } else {
+            if (!settings.apiKey) {
+                throw new Error('API key required for this provider.');
+            }
+
+            switch (providerId) {
+                case 'openai':
+                    summary = await generateWithOpenAI(userPrompt, systemPrompt);
+                    break;
+                case 'claude':
+                    summary = await generateWithClaude(userPrompt, systemPrompt);
+                    break;
+                case 'gemini':
+                    summary = await generateWithGeminiAPI(`${systemPrompt}\n\n${userPrompt}`);
+                    break;
+                case 'groq':
+                    summary = await generateWithGroq(`${systemPrompt}\n\n${userPrompt}`);
+                    break;
+                case 'grok':
+                    summary = await generateWithGrok(`${systemPrompt}\n\n${userPrompt}`);
+                    break;
+                default:
+                    throw new Error('Provider not supported for summarization yet.');
+            }
+        }
+
+        // Format output (convert ** to bold for simple display if needed, or just display as text)
+        // Simple markdown formatter
+        const formattedSummary = summary
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\n/g, '<br>')
+            .replace(/- /g, '• '); // Cleaner bullets
+
+        elements.profileSummaryText.innerHTML = formattedSummary;
+
+    } catch (error) {
+        console.error('Read Mode Error:', error);
+        elements.profileSummaryText.textContent = 'Failed to generate summary: ' + error.message;
     }
 }
 
@@ -887,7 +1007,7 @@ async function generateWithGeminiNano(prompt) {
 /**
  * Generate with OpenAI API
  */
-async function generateWithOpenAI(prompt) {
+async function generateWithOpenAI(prompt, systemPrompt = null) {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -897,7 +1017,7 @@ async function generateWithOpenAI(prompt) {
         body: JSON.stringify({
             model: settings.model || 'gpt-4o-mini',
             messages: [
-                { role: 'system', content: 'You are a helpful assistant that writes personalized LinkedIn messages.' },
+                { role: 'system', content: systemPrompt || 'You are a helpful assistant that writes personalized LinkedIn messages.' },
                 { role: 'user', content: prompt }
             ],
             max_tokens: 300,
@@ -917,7 +1037,7 @@ async function generateWithOpenAI(prompt) {
 /**
  * Generate with Claude (Anthropic) API
  */
-async function generateWithClaude(prompt) {
+async function generateWithClaude(prompt, systemPrompt = null) {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -929,6 +1049,7 @@ async function generateWithClaude(prompt) {
         body: JSON.stringify({
             model: settings.model || 'claude-3-5-sonnet-20241022',
             max_tokens: 300,
+            system: systemPrompt,
             messages: [
                 { role: 'user', content: prompt }
             ]
@@ -1127,6 +1248,23 @@ Output ONLY the final LinkedIn message. No explanations, no quotes around the me
 }
 
 /**
+ * Build raw profile context string for Read Mode
+ */
+function buildProfileContextString(profileData) {
+    const { name, headline, company, recentActivitySnippet, featuredHighlight, about } = profileData;
+    let context = '';
+
+    if (name) context += `Name: ${name}\n`;
+    if (headline) context += `Headline: ${headline}\n`;
+    if (company) context += `Current Role/Company: ${company}\n`;
+    if (about) context += `About/Bio: ${about}\n`;
+    if (recentActivitySnippet) context += `Recent Activity Snippet: ${recentActivitySnippet}\n`;
+    if (featuredHighlight) context += `Achievement/Highlight: ${featuredHighlight}\n`;
+
+    return context;
+}
+
+/**
  * Build a fallback message when AI is not available
  * @param {Object} profileData - Profile data
  * @returns {string} Template-based message
@@ -1264,10 +1402,14 @@ async function handleCopyClick() {
 /**
  * Handle insert button click - inserts message into LinkedIn chat
  */
-async function handleInsertClick() {
+/**
+ * Handle "Copy & Open Chat" button click
+ * Safe workflow: Copies to clipboard first, then opens chat window for manual pasting
+ */
+async function handleCopyAndOpenChat() {
     const message = elements.messageText.textContent || currentGeneratedMessage;
     if (!message) {
-        showToast('No message to insert', 'error');
+        showToast('No message to copy', 'error');
         return;
     }
 
@@ -1285,6 +1427,9 @@ async function handleInsertClick() {
     const originalHTML = btn.innerHTML;
 
     try {
+        // 1. Copy to clipboard FIRST (Success is critical here)
+        await navigator.clipboard.writeText(message);
+
         btn.disabled = true;
         btn.innerHTML = `
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
@@ -1294,202 +1439,42 @@ async function handleInsertClick() {
       Opening chat...
     `;
 
-        // First, try to open the chat by clicking the Message button
+        // 2. Try to open the chat
         const openResult = await chrome.scripting.executeScript({
             target: { tabId: currentTabId },
             func: openChatWindow
         });
 
-        // Wait a bit for chat to open
         if (openResult && openResult[0]?.result?.clicked) {
-            await new Promise(resolve => setTimeout(resolve, 1500));
-        }
-
-        btn.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
-        <circle cx="12" cy="12" r="12" r="10" stroke-opacity="0.25"/>
-        <path d="M12 2a10 10 0 0 1 10 10"/>
-      </svg>
-      Inserting...
-    `;
-
-        // Now try to insert the message
-        const results = await chrome.scripting.executeScript({
-            target: { tabId: currentTabId },
-            func: insertMessageToChat,
-            args: [message]
-        });
-
-        if (results && results[0]?.result?.success) {
             btn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="20 6 9 17 4 12"/>
-        </svg>
-        Inserted!
-      `;
-            showToast('Message inserted into chat!', 'success');
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                  <polyline points="15 3 21 3 21 9"/>
+                  <line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+                Chat Opened!
+            `;
+            showToast('Message copied! Paste it into the chat.', 'success');
         } else {
-            // Chat couldn't be opened or found - copy to clipboard as fallback
-            await navigator.clipboard.writeText(message);
-            showToast('Message copied! Click "Message" on LinkedIn, then paste.', 'success');
             btn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-        </svg>
-        Copied!
-      `;
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                Copied!
+            `;
+            showToast('Message copied! Could not auto-open chat.', 'success');
         }
 
     } catch (error) {
-        console.error('[SidePanel] Insert failed:', error);
-        // Fallback: copy to clipboard
-        try {
-            await navigator.clipboard.writeText(message);
-            showToast('Message copied! Click "Message" on LinkedIn, then paste.', 'success');
-        } catch (clipError) {
-            showToast('Failed to insert. Please copy manually.', 'error');
-        }
+        console.error('[SidePanel] Copy/Open failed:', error);
+        showToast('Failed to copy. Please copy manually.', 'error');
         btn.innerHTML = originalHTML;
     } finally {
         setTimeout(() => {
             btn.innerHTML = originalHTML;
             btn.disabled = false;
-        }, 2000);
-    }
-}
-
-/**
- * Try to open chat window by clicking Message button (injected into LinkedIn tab)
- */
-function openChatWindow() {
-    try {
-        // Look for Message button to click
-        const messageButtonSelectors = [
-            'button[aria-label*="Message"]',
-            '.pv-top-card-v2-ctas button[aria-label*="Message"]',
-            '.pvs-profile-actions button[aria-label*="Message"]',
-            '.artdeco-button--primary[aria-label*="Message"]'
-        ];
-
-        for (const selector of messageButtonSelectors) {
-            const buttons = document.querySelectorAll(selector);
-            for (const button of buttons) {
-                const text = button.textContent || '';
-                const ariaLabel = button.getAttribute('aria-label') || '';
-                if ((text.includes('Message') || ariaLabel.includes('Message')) &&
-                    button.offsetParent !== null) {
-                    button.click();
-                    return { clicked: true };
-                }
-            }
-        }
-
-        return { clicked: false };
-    } catch (error) {
-        return { clicked: false, error: error.message };
-    }
-}
-
-/**
- * Insert message into LinkedIn chat (injected into LinkedIn tab)
- * @param {string} message - Message to insert
- */
-function insertMessageToChat(message) {
-    try {
-        // Find the message input field - expanded selectors
-        const selectors = [
-            // Messaging overlay input (most common)
-            '.msg-form__contenteditable[contenteditable="true"]',
-            // Message compose box
-            '.msg-form__msg-content-container .msg-form__contenteditable',
-            // Newer LinkedIn messaging
-            '.msg-form__message-texteditor [contenteditable="true"]',
-            // Alternative selectors
-            'div[data-artdeco-is-focused="true"][contenteditable="true"]',
-            '.msg-form__textarea',
-            // InMail compose
-            '.compose-form__message-field',
-            // Generic contenteditable in messaging
-            '.msg-s-message-list-content + div [contenteditable="true"]',
-            // Any contenteditable paragraph in msg-form
-            '.msg-form p[contenteditable="true"]',
-            // Fallback: any focused contenteditable
-            '[contenteditable="true"]:focus'
-        ];
-
-        let inputField = null;
-        for (const selector of selectors) {
-            inputField = document.querySelector(selector);
-            if (inputField) {
-                console.log('[LinkedIn DM Copilot] Found input with:', selector);
-                break;
-            }
-        }
-
-        if (!inputField) {
-            // Try to find any contenteditable in messaging area
-            const msgForm = document.querySelector('.msg-form') ||
-                document.querySelector('.msg-compose-form') ||
-                document.querySelector('[class*="msg-form"]') ||
-                document.querySelector('.msg-overlay-conversation-bubble');
-            if (msgForm) {
-                inputField = msgForm.querySelector('[contenteditable="true"]');
-                console.log('[LinkedIn DM Copilot] Found input in msg-form');
-            }
-        }
-
-        if (!inputField) {
-            // Last resort: look for any visible contenteditable in messaging panel
-            const allEditable = document.querySelectorAll('[contenteditable="true"]');
-            for (const el of allEditable) {
-                const rect = el.getBoundingClientRect();
-                if (rect.width > 100 && rect.height > 30 && el.offsetParent !== null) {
-                    inputField = el;
-                    console.log('[LinkedIn DM Copilot] Found input via visibility check');
-                    break;
-                }
-            }
-        }
-
-        if (!inputField) {
-            return { success: false, error: 'Chat input not found. Click "Message" first.' };
-        }
-
-        // Focus and clear the input
-        inputField.focus();
-
-        // Clear existing content
-        const selection = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(inputField);
-        selection.removeAllRanges();
-        selection.addRange(range);
-
-        // Insert the message using multiple methods for compatibility
-        let inserted = false;
-
-        // Method 1: execCommand (deprecated but works on LinkedIn)
-        try {
-            inserted = document.execCommand('insertText', false, message);
-        } catch (e) {
-            console.log('[LinkedIn DM Copilot] execCommand failed:', e);
-        }
-
-        // Method 2: Direct innerHTML if execCommand failed
-        if (!inserted || inputField.textContent !== message) {
-            inputField.innerHTML = `<p>${message}</p>`;
-        }
-
-        // Trigger various events to ensure LinkedIn detects the change
-        inputField.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-        inputField.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
-        inputField.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
-
-        return { success: true };
-
-    } catch (error) {
-        return { success: false, error: error.message };
+        }, 2500);
     }
 }
 
