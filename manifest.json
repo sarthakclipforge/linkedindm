@@ -1,0 +1,51 @@
+{
+    "manifest_version": 3,
+    "name": "LinkedIn DM Copilot",
+    "version": "1.0.0",
+    "description": "Generate personalized, human-sounding LinkedIn DM messages based on profile context. A writing assistant, not automation.",
+    "permissions": [
+        "activeTab",
+        "sidePanel",
+        "storage",
+        "scripting",
+        "tabs"
+    ],
+    "host_permissions": [
+        "https://www.linkedin.com/*"
+    ],
+    "background": {
+        "service_worker": "background/service-worker.js",
+        "type": "module"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "https://www.linkedin.com/in/*"
+            ],
+            "js": [
+                "core/profile-analyzer.js",
+                "core/prompt-builder.js",
+                "content/ai-bridge.js",
+                "content/profile-reader.js"
+            ],
+            "css": [],
+            "run_at": "document_idle"
+        }
+    ],
+    "side_panel": {
+        "default_path": "sidepanel/sidepanel.html"
+    },
+    "icons": {
+        "16": "icons/icon16.svg",
+        "48": "icons/icon48.svg",
+        "128": "icons/icon128.svg"
+    },
+    "action": {
+        "default_title": "LinkedIn DM Copilot",
+        "default_icon": {
+            "16": "icons/icon16.svg",
+            "48": "icons/icon48.svg",
+            "128": "icons/icon128.svg"
+        }
+    }
+}

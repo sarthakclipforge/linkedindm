@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LinkedIn DM Copilot</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-content">
+        <div class="logo">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+            <path d="M2 17l10 5 10-5" />
+            <path d="M2 12l10 5 10-5" />
+          </svg>
+          <span>DM Copilot</span>
+        </div>
+        <div class="header-badge">Writing Assistant</div>
+      </div>
+    </header>
+
+    <!-- Main Action Button -->
+    <div class="main-action">
+      <button id="load-profile-btn" class="load-btn">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+          <circle cx="12" cy="7" r="4" />
+        </svg>
+        Load Current Profile
+      </button>
+    </div>
+
+    <!-- Tab Navigation -->
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="context">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+          <circle cx="12" cy="7" r="4" />
+        </svg>
+        Context
+      </button>
+      <button class="tab-btn" data-tab="message">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+        Message
+      </button>
+    </nav>
+
+    <!-- Context Tab Content -->
+    <section id="context-tab" class="tab-content active">
+      <div id="empty-state" class="empty-state">
+        <div class="empty-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 16v-4" />
+            <path d="M12 8h.01" />
+          </svg>
+        </div>
+        <h3>No Profile Loaded</h3>
+        <p>Open a LinkedIn profile page and click <strong>"Load Current Profile"</strong> above.</p>
+      </div>
+
+      <div id="profile-context" class="profile-context hidden">
+        <div class="context-card">
+          <div class="context-header">
+            <div class="avatar" id="profile-avatar">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+            </div>
+            <div class="context-title">
+              <h2 id="profile-name">Loading...</h2>
+              <p id="profile-headline" class="headline">-</p>
+            </div>
+          </div>
+
+          <div class="context-details">
+            <div class="detail-item" id="company-section">
+              <div class="detail-label">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  <polyline points="9 22 9 12 15 12 15 22" />
+                </svg>
+                Current Role
+              </div>
+              <div class="detail-value" id="profile-company">-</div>
+            </div>
+
+            <div class="detail-item" id="activity-section">
+              <div class="detail-label">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2">
+                  <polygon
+                    points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                </svg>
+                Recent Activity
+              </div>
+              <div class="detail-value activity-snippet" id="profile-activity">No recent activity found</div>
+            </div>
+
+            <div class="detail-item" id="featured-section">
+              <div class="detail-label">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2">
+                  <path d="M12 2v4" />
+                  <path d="m6.8 15-3.5 2" />
+                  <path d="m20.7 17-3.5-2" />
+                  <path d="M6.8 9 3.3 7" />
+                  <path d="m20.7 7-3.5 2" />
+                  <path d="m9 22 3-8 3 8" />
+                </svg>
+                Featured
+              </div>
+              <div class="detail-value" id="profile-featured">No featured content</div>
+            </div>
+
+            <div class="detail-item" id="about-section">
+              <div class="detail-label">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                  <line x1="10" y1="9" x2="8" y2="9" />
+                </svg>
+                About
+              </div>
+              <div class="detail-value" id="profile-about">No about section found</div>
+            </div>
+          </div>
+        </div>
+
+        <button id="generate-btn" class="primary-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+            <path d="M2 17l10 5 10-5" />
+            <path d="M2 12l10 5 10-5" />
+          </svg>
+          Generate Message
+        </button>
+      </div>
+    </section>
+
+    <!-- Message Tab Content -->
+    <section id="message-tab" class="tab-content">
+      <div id="message-empty" class="empty-state">
+        <div class="empty-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="1.5">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        </div>
+        <h3>No Message Yet</h3>
+        <p>Load a profile and click <strong>"Generate Message"</strong> to create a personalized DM.</p>
+      </div>
+
+      <div id="message-content" class="message-content hidden">
+        <div class="message-card">
+          <div class="message-header">
+            <span class="message-label">Generated Message</span>
+            <span class="message-meta" id="message-meta">Just now</span>
+          </div>
+          <div class="message-text" id="message-text" contenteditable="true"></div>
+          <div class="message-edit-hint">Click to edit the message</div>
+        </div>
+
+        <div class="message-actions">
+          <div class="action-row">
+            <button id="copy-btn" class="action-btn primary">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              Copy
+            </button>
+            <button id="insert-btn" class="action-btn success">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2">
+                <path d="M12 5v14" />
+                <path d="m19 12-7 7-7-7" />
+              </svg>
+              Insert to Chat
+            </button>
+          </div>
+          <button id="regenerate-btn" class="secondary-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2">
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            </svg>
+            Regenerate Message
+          </button>
+        </div>
+      </div>
+
+      <div id="message-loading" class="loading-state hidden">
+        <div class="loading-spinner"></div>
+        <p>Crafting your message...</p>
+      </div>
+    </section>
+
+    <!-- Status Bar -->
+    <footer class="status-bar">
+      <div class="status-indicator" id="status-indicator">
+        <span class="status-dot"></span>
+        <span class="status-text">Ready</span>
+      </div>
+      <div class="status-right">
+        <span class="rate-limit-info" id="rate-limit-info"></span>
+        <button id="settings-btn" class="settings-btn" title="Settings">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+          Settings
+        </h2>
+        <button id="close-settings-btn" class="close-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <!-- LLM Provider Selection -->
+        <div class="settings-section">
+          <h3>AI Model Provider</h3>
+          <p class="settings-description">Select your preferred AI provider for generating messages.</p>
+
+          <div class="provider-grid" id="provider-grid">
+            <label class="provider-option">
+              <input type="radio" name="llm-provider" value="gemini-nano" checked>
+              <div class="provider-card">
+                <div class="provider-icon gemini">
+                  <svg viewBox="0 0 24 24" width="24" height="24">
+                    <path fill="currentColor" d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                  </svg>
+                </div>
+                <div class="provider-info">
+                  <span class="provider-name">Gemini Nano</span>
+                  <span class="provider-badge free">Built-in</span>
+                </div>
+              </div>
+            </label>
+
+            <label class="provider-option">
+              <input type="radio" name="llm-provider" value="openai">
+              <div class="provider-card">
+                <div class="provider-icon openai">
+                  <svg viewBox="0 0 24 24" width="24" height="24">
+                    <path fill="currentColor"
+                      d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z" />
+                  </svg>
+                </div>
+                <div class="provider-info">
+                  <span class="provider-name">OpenAI</span>
+                  <span class="provider-badge api">API Key</span>
+                </div>
+              </div>
+            </label>
+
+            <label class="provider-option">
+              <input type="radio" name="llm-provider" value="claude">
+              <div class="provider-card">
+                <div class="provider-icon claude">
+                  <svg viewBox="0 0 24 24" width="24" height="24">
+                    <path fill="currentColor"
+                      d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+                  </svg>
+                </div>
+                <div class="provider-info">
+                  <span class="provider-name">Claude</span>
+                  <span class="provider-badge api">API Key</span>
+                </div>
+              </div>
+            </label>
+
+            <label class="provider-option">
+              <input type="radio" name="llm-provider" value="gemini">
+              <div class="provider-card">
+                <div class="provider-icon gemini-api">
+                  <svg viewBox="0 0 24 24" width="24" height="24">
+                    <path fill="currentColor" d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                  </svg>
+                </div>
+                <div class="provider-info">
+                  <span class="provider-name">Gemini API</span>
+                  <span class="provider-badge api">API Key</span>
+                </div>
+              </div>
+            </label>
+
+            <label class="provider-option">
+              <input type="radio" name="llm-provider" value="groq">
+              <div class="provider-card">
+                <div class="provider-icon groq">
+                  <svg viewBox="0 0 24 24" width="24" height="24">
+                    <path fill="currentColor"
+                      d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-5-9h10v2H7z" />
+                  </svg>
+                </div>
+                <div class="provider-info">
+                  <span class="provider-name">Groq</span>
+                  <span class="provider-badge api">API Key</span>
+                </div>
+              </div>
+            </label>
+
+            <label class="provider-option">
+              <input type="radio" name="llm-provider" value="grok">
+              <div class="provider-card">
+                <div class="provider-icon grok">
+                  <svg viewBox="0 0 24 24" width="24" height="24">
+                    <path fill="currentColor"
+                      d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                  </svg>
+                </div>
+                <div class="provider-info">
+                  <span class="provider-name">Grok (xAI)</span>
+                  <span class="provider-badge api">API Key</span>
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- API Key Input -->
+        <div id="api-key-section" class="settings-section hidden">
+          <h3>API Key</h3>
+          <p class="settings-description" id="api-key-description">Enter your API key for the selected provider.</p>
+
+          <div class="input-group">
+            <input type="password" id="api-key-input" class="settings-input" placeholder="sk-..." autocomplete="off">
+            <button id="toggle-api-key" class="toggle-visibility-btn" title="Show/Hide API Key">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" class="eye-icon">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" class="eye-off-icon hidden">
+                <path
+                  d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="api-key-help">
+            <a id="get-api-key-link" href="#" target="_blank" class="help-link">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              How to get an API key
+            </a>
+          </div>
+        </div>
+
+        <!-- Model Selection (for providers with multiple models) -->
+        <div id="model-section" class="settings-section hidden">
+          <h3>Model</h3>
+          <select id="model-select" class="settings-select">
+            <!-- Options populated dynamically -->
+          </select>
+        </div>
+
+        <!-- Writing Style Section -->
+        <div class="settings-section">
+          <h3>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+            </svg>
+            Your Writing Style
+          </h3>
+          <p class="settings-description">
+            Paste up to 5 LinkedIn messages you've written before. The AI will learn your tone and style.
+          </p>
+
+          <div class="sample-messages" id="sample-messages">
+            <div class="sample-message-item">
+              <label>Message 1</label>
+              <textarea class="sample-message-input" id="sample-1"
+                placeholder="Paste a LinkedIn message you've sent before..." rows="3"></textarea>
+            </div>
+            <div class="sample-message-item">
+              <label>Message 2</label>
+              <textarea class="sample-message-input" id="sample-2" placeholder="Another message example..."
+                rows="3"></textarea>
+            </div>
+            <div class="sample-message-item">
+              <label>Message 3</label>
+              <textarea class="sample-message-input" id="sample-3" placeholder="Another message example..."
+                rows="3"></textarea>
+            </div>
+            <div class="sample-message-item">
+              <label>Message 4</label>
+              <textarea class="sample-message-input" id="sample-4" placeholder="Another message example..."
+                rows="3"></textarea>
+            </div>
+            <div class="sample-message-item">
+              <label>Message 5</label>
+              <textarea class="sample-message-input" id="sample-5" placeholder="Another message example..."
+                rows="3"></textarea>
+            </div>
+          </div>
+
+          <div class="learned-messages-info">
+            <div class="learned-badge">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                <polyline points="22 4 12 14.01 9 11.01" />
+              </svg>
+              <span id="learned-count">0</span> messages learned from your edits
+            </div>
+            <button type="button" id="clear-learned-btn" class="text-btn">Clear learned</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="cancel-settings-btn" class="secondary-btn small">Cancel</button>
+        <button id="save-settings-btn" class="primary-btn small">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+
+</html>
