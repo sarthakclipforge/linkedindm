@@ -11,7 +11,7 @@
  */
 
 // LLM Provider Configuration
-const LLM_PROVIDERS = {
+var LLM_PROVIDERS = {
     'gemini-nano': {
         name: 'Gemini Nano',
         requiresApiKey: false,
@@ -81,7 +81,6 @@ const LLM_PROVIDERS = {
 };
 
 // State
-// State
 let currentProfileData = null;
 let currentGeneratedMessage = '';
 let isGenerating = false;
@@ -98,6 +97,8 @@ let settings = {
 const elements = {
     // Main action
     loadProfileBtn: document.getElementById('load-profile-btn'),
+    reloadProfileBtn: document.getElementById('reload-profile-btn'),
+    profileAvatar: document.getElementById('profile-avatar'),
 
     // Tabs
     tabBtns: document.querySelectorAll('.tab-btn'),
@@ -292,12 +293,16 @@ function setupTabNavigation() {
  * @param {string} tabId - Tab to switch to ('context' or 'message')
  */
 function switchTab(tabId) {
+    // Toggle active class on tab buttons
     elements.tabBtns.forEach(btn => {
         btn.classList.toggle('active', btn.dataset.tab === tabId);
     });
 
-    elements.contextTab.classList.toggle('active', tabId === 'context');
-    elements.messageTab.classList.toggle('active', tabId === 'message');
+    // Toggle visibility of tab content containers
+    const contextContent = document.getElementById('context-tab-content');
+    const messageContent = document.getElementById('message-tab-content');
+    if (contextContent) contextContent.classList.toggle('active', tabId === 'context');
+    if (messageContent) messageContent.classList.toggle('active', tabId === 'message');
 }
 
 /**
@@ -305,23 +310,29 @@ function switchTab(tabId) {
  */
 function setupEventListeners() {
     elements.loadProfileBtn?.addEventListener('click', handleLoadProfile);
+    elements.reloadProfileBtn?.addEventListener('click', handleLoadProfile);
     // Generate button
     elements.generateBtn?.addEventListener('click', handleGenerateClick);
 
     // Read Mode
     elements.readModeBtn?.addEventListener('click', handleReadModeClick);
     elements.closeReadModeBtn?.addEventListener('click', () => {
-        elements.readModeContent.classList.add('hidden');
+        elements.readModeContent.classList.remove('visible');
+    });
+    // Close on backdrop click
+    elements.readModeContent?.addEventListener('click', (e) => {
+        if (e.target === elements.readModeContent) {
+            elements.readModeContent.classList.remove('visible');
+        }
     });
 
     // Copy & Insert buttons
     elements.copyBtn?.addEventListener('click', handleCopyClick);
-    elements.insertBtn?.addEventListener('click', handleCopyAndOpenChat);
     elements.regenerateBtn?.addEventListener('click', handleGenerateClick);
 
     // Track edits to message
     elements.messageText?.addEventListener('input', () => {
-        currentGeneratedMessage = elements.messageText.textContent || '';
+        currentGeneratedMessage = elements.messageText.value || '';
     });
 }
 
@@ -504,7 +515,15 @@ function setupMessageListeners() {
  * Handle Load Profile button click
  */
 async function handleLoadProfile() {
-    const btn = elements.loadProfileBtn;
+    // Use whichever button is visible — loadProfileBtn (empty state) or reloadProfileBtn (profile context)
+    const profileContextVisible = elements.profileContext && !elements.profileContext.classList.contains('hidden');
+    const btn = profileContextVisible ? elements.reloadProfileBtn : elements.loadProfileBtn;
+
+    if (!btn) return;
+
+    // Prevent double clicking
+    if (btn.classList.contains('loading') || btn.disabled) return;
+
     const originalHTML = btn.innerHTML;
 
     try {
@@ -517,7 +536,7 @@ async function handleLoadProfile() {
       </svg>
       Loading...
     `;
-        updateStatus('loading', 'Extracting profile...');
+        updateStatus('loading', 'Connecting to page...');
 
         // Get current tab
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -528,36 +547,94 @@ async function handleLoadProfile() {
 
         currentTabId = tab.id;
 
-        // Execute script to extract profile data
-        const results = await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            func: extractProfileData
-        });
+        // Clear previous data
+        currentProfileData = null;
+        if (elements.profileName) elements.profileName.textContent = 'Loading...';
+        if (elements.profileHeadline) elements.profileHeadline.textContent = '';
+        if (elements.profileActivity) elements.profileActivity.textContent = '';
+        if (elements.profileAbout) elements.profileAbout.textContent = '';
+        if (elements.activitySection) elements.activitySection.classList.add('hidden');
+        if (elements.aboutSection) elements.aboutSection.classList.add('hidden');
 
-        if (results && results[0]?.result) {
-            const profileData = results[0].result;
+        // Strategy 1: Try messaging the content script (ai-bridge.js)
+        let profileData = null;
 
-            if (!profileData.name) {
-                throw new Error('Could not extract profile data. Please ensure the profile has loaded.');
+        try {
+            const response = await chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_PROFILE_DATA' });
+            if (response && response.success && response.data) {
+                profileData = response.data;
             }
-
-            updateProfileContext(profileData);
-
-            btn.classList.remove('loading');
-            btn.classList.add('success');
-            btn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="20 6 9 17 4 12"/>
-        </svg>
-        Profile Loaded!
-      `;
-
-            updateStatus('ready', 'Profile loaded');
-            showToast('Profile loaded successfully!', 'success');
-
-        } else {
-            throw new Error('Could not access the page. Please refresh and try again.');
+        } catch (msgError) {
+            console.log('[SidePanel] sendMessage failed, falling back to scripting:', msgError.message);
         }
+
+        // Strategy 2: Fallback — inject and execute ProfileAnalyzer directly
+        if (!profileData) {
+            try {
+                // First inject the profile-analyzer script
+                await chrome.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    files: ['core/profile-analyzer.js']
+                });
+
+                // Force scroll to load dynamic content (About, Experience, Activity often lazy load)
+                await chrome.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    func: () => window.scrollTo(0, document.body.scrollHeight / 2)
+                });
+
+                // Short wait for scroll trigger
+                await new Promise(r => setTimeout(r, 500));
+
+                // Then run the analysis with a retry wrapper
+                const results = await chrome.scripting.executeScript({
+                    target: { tabId: tab.id },
+                    func: async () => {
+                        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+                        // Retry loop for up to 2 seconds
+                        for (let i = 0; i < 4; i++) {
+                            if (typeof ProfileAnalyzer !== 'undefined') {
+                                const data = ProfileAnalyzer.analyze(document.body);
+                                // Check if we got essential data
+                                if (data && data.name) return data;
+                            }
+                            await sleep(500);
+                        }
+
+                        // Final attempt
+                        return typeof ProfileAnalyzer !== 'undefined'
+                            ? ProfileAnalyzer.analyze(document.body)
+                            : null;
+                    }
+                });
+
+                if (results && results[0] && results[0].result) {
+                    profileData = results[0].result;
+                }
+            } catch (scriptError) {
+                console.error('[SidePanel] Scripting fallback failed:', scriptError);
+                throw new Error('Could not connect to page. Please refresh the LinkedIn page and try again.');
+            }
+        }
+
+        if (!profileData || !profileData.name) {
+            throw new Error('Could not extract profile data. Please ensure the profile has loaded completely.');
+        }
+
+        updateProfileContext(profileData);
+
+        btn.classList.remove('loading');
+        btn.classList.add('success');
+        btn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Profile Loaded!
+          `;
+
+        updateStatus('ready', 'Profile loaded');
+        showToast('Profile loaded successfully!', 'success');
 
     } catch (error) {
         console.error('[SidePanel] Load profile error:', error);
@@ -574,176 +651,6 @@ async function handleLoadProfile() {
     }
 }
 
-/**
- * Extract profile data from the page (injected into LinkedIn tab)
- */
-function extractProfileData() {
-    try {
-        console.log('[LinkedIn DM Copilot] Starting profile extraction...');
-
-        // Helper to find text content with multiple selectors
-        const getText = (selectors) => {
-            for (const selector of selectors) {
-                const el = document.querySelector(selector);
-                if (el && el.textContent.trim()) {
-                    return el.textContent.trim();
-                }
-            }
-            return '';
-        };
-
-        // Extract profile ID from URL
-        const profileId = window.location.pathname.match(/\/in\/([^/?#]+)/)?.[1] || '';
-
-        // Extract name - Try robust selectors
-        let name = getText([
-            '.text-heading-xlarge', // Common new design
-            '.pv-text-details__left-panel h1',
-            '.artdeco-entity-lockup__title',
-            'h1.text-heading-xlarge',
-            'h1' // Fallback
-        ]);
-
-        // Fallback: Try obtaining from title (e.g. "Name | LinkedIn")
-        if (!name) {
-            const title = document.title;
-            if (title.includes(' | LinkedIn')) {
-                name = title.split(' | LinkedIn')[0];
-            }
-        }
-
-        // Extract headline - Try robust selectors first
-        let headline = getText([
-            '.text-body-medium',
-            '.pv-text-details__left-panel .text-body-medium',
-            '[data-generated-suggestion-target="headline"]',
-            '.ph5 .text-body-medium', // Mobile/narrow view
-            '.pv-top-card--list-bullet > li:first-child', // Sometimes in list
-            '.artdeco-entity-lockup__subtitle', // Generic lockup
-            'h2.text-title-medium',
-            'div.text-body-medium.break-words'
-        ]);
-
-        // Fallback: Extract from document title (format: "Name - Headline | LinkedIn")
-        if (!headline) {
-            try {
-                const title = document.title;
-                if (title.includes(' | LinkedIn')) {
-                    const namePart = title.split(' | LinkedIn')[0];
-                    // Split by " - " (space hyphen space) to find potential headline
-                    const parts = namePart.split(' - ');
-                    if (parts.length > 1) {
-                        // Assume everything after the first " - " is the headline/tagline
-                        headline = parts.slice(1).join(' - ').trim();
-                    }
-                }
-            } catch (e) {
-                console.log('Title fallback failed', e);
-            }
-        }
-
-        // Extract "About" section
-        let about = '';
-        const aboutSection = document.querySelector('#about') || document.querySelector('[id="about"]');
-        if (aboutSection) {
-            // Navigate to the parent container to find the content
-            const aboutContainer = aboutSection.closest('section');
-            if (aboutContainer) {
-                const aboutTextEl = aboutContainer.querySelector('.display-flex .inline-show-more-text') ||
-                    aboutContainer.querySelector('.pv-shared-text-with-see-more');
-                about = aboutTextEl?.textContent?.trim() || '';
-            }
-        }
-
-        // Extract company/role from experience
-        let company = '';
-        // Method 1: Check top card current role
-        const topCardCurrentParams = document.querySelectorAll('.pv-text-details__right-panel .pv-text-details__right-panel-item-link');
-        if (topCardCurrentParams.length > 0) {
-            company = topCardCurrentParams[0].textContent.trim();
-        }
-
-        // Method 2: If not found, look at Experience section
-        if (!company) {
-            const experienceHeader = Array.from(document.querySelectorAll('h2')).find(h => h.textContent.trim() === 'Experience');
-            if (experienceHeader) {
-                const experienceSection = experienceHeader.closest('section');
-                if (experienceSection) {
-                    // Try to find first role
-                    const firstRole = experienceSection.querySelector('li .display-flex');
-                    if (firstRole) {
-                        const roleEl = firstRole.querySelector('.mr1 span[aria-hidden="true"]'); // Role title
-                        const companyEl = firstRole.querySelector('.t-14.t-normal span[aria-hidden="true"]'); // Company name
-
-                        const role = roleEl?.textContent?.trim() || '';
-                        const companyName = companyEl?.textContent?.trim() || '';
-
-                        if (role && companyName) {
-                            company = `${role} at ${companyName}`;
-                        } else {
-                            company = role || companyName;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Extract recent activity
-        let recentActivitySnippet = '';
-        // Look for the activity section
-        const activityHeader = Array.from(document.querySelectorAll('h2')).find(h => h.textContent.trim() === 'Activity');
-        if (activityHeader) {
-            const activitySection = activityHeader.closest('section');
-            if (activitySection) {
-                // Try to find the text of the most recent post/comment
-                const postContent = activitySection.querySelector('.feed-shared-update-v2__description') ||
-                    activitySection.querySelector('.feed-shared-text-view') ||
-                    activitySection.querySelector('.attribution-descriptions-container') ||
-                    activitySection.querySelector('span[dir="ltr"]');
-
-                if (postContent) {
-                    const text = postContent.innerText?.trim() || '';
-                    // InnerText preserves newlines better than textContent for structured posts
-                    recentActivitySnippet = text.substring(0, 300) + (text.length > 300 ? '...' : '');
-                }
-            }
-        }
-
-        // Extract featured
-        let featuredHighlight = '';
-        const featuredHeader = Array.from(document.querySelectorAll('h2')).find(h => h.textContent.trim() === 'Featured');
-        if (featuredHeader) {
-            const featuredSection = featuredHeader.closest('section');
-            if (featuredSection) {
-                const firstFeatured = featuredSection.querySelector('li');
-                if (firstFeatured) {
-                    const titleEl = firstFeatured.querySelector('.mr1 span[aria-hidden="true"]') ||
-                        firstFeatured.querySelector('strong') ||
-                        firstFeatured.querySelector('.artdeco-entity-lockup__title');
-                    featuredHighlight = titleEl?.textContent?.trim() || '';
-                }
-            }
-        }
-
-        const data = {
-            profileId,
-            name,
-            headline,
-            company,
-            about, // Added about section
-            recentActivitySnippet,
-            featuredHighlight,
-            extractedAt: new Date().toISOString()
-        };
-
-        console.log('[LinkedIn DM Copilot] Extracted data:', data);
-        return data;
-
-    } catch (error) {
-        console.error('[LinkedIn DM Copilot] Profile extraction error:', error);
-        return { error: error.message, stack: error.stack };
-    }
-}
 
 /**
  * Update the UI with profile context
@@ -763,7 +670,18 @@ function updateProfileContext(profileData) {
     elements.profileName.textContent = profileData.name || 'Unknown';
     elements.profileHeadline.textContent = profileData.headline || 'No headline';
 
-    // Update company/role
+    // Update avatar
+    if (profileData.profilePhoto && elements.profileAvatar) {
+        elements.profileAvatar.src = profileData.profilePhoto;
+        elements.profileAvatar.alt = profileData.name || 'Profile';
+    } else if (elements.profileAvatar) {
+        // Generate initials avatar fallback
+        const initials = (profileData.name || 'U').split(' ').map(n => n[0]).join('').substring(0, 2);
+        elements.profileAvatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(initials)}&background=6366f1&color=fff&size=80`;
+        elements.profileAvatar.alt = profileData.name || 'Profile';
+    }
+
+    // Company/Role
     if (profileData.company) {
         elements.profileCompany.textContent = profileData.company;
         elements.companySection.classList.remove('hidden');
@@ -771,16 +689,7 @@ function updateProfileContext(profileData) {
         elements.companySection.classList.add('hidden');
     }
 
-    // Update activity
-    if (profileData.recentActivitySnippet) {
-        elements.profileActivity.textContent = `"${profileData.recentActivitySnippet}"`;
-        elements.activitySection.classList.remove('hidden');
-    } else {
-        elements.profileActivity.textContent = 'No recent activity found';
-        elements.activitySection.classList.remove('hidden');
-    }
-
-    // Update featured
+    // Featured
     if (profileData.featuredHighlight) {
         elements.profileFeatured.textContent = profileData.featuredHighlight;
         elements.featuredSection.classList.remove('hidden');
@@ -788,13 +697,51 @@ function updateProfileContext(profileData) {
         elements.featuredSection.classList.add('hidden');
     }
 
-    // Update about
-    if (profileData.about) {
-        elements.profileAbout.textContent = profileData.about.substring(0, 150) + (profileData.about.length > 150 ? '...' : '');
-        elements.aboutSection.classList.remove('hidden');
+    // AI SUMMARIZATION START
+
+    // Recent Activity Summary
+    if (profileData.recentActivities && profileData.recentActivities.length > 0) {
+        elements.activitySection.classList.remove('hidden');
+        elements.profileActivity.innerHTML = '<em class="text-xs text-secondary">Analyzing recent posts...</em>';
+
+        // Async generate summary
+        generateActivitySummary(profileData.recentActivities, profileData.name)
+            .then(summary => {
+                if (elements.profileActivity) elements.profileActivity.textContent = summary;
+            })
+            .catch(err => {
+                console.warn('Activity summary failed:', err);
+                // Fallback to first post snippet
+                if (elements.profileActivity) {
+                    elements.profileActivity.textContent = `"${profileData.recentActivities[0].substring(0, 100)}..."`;
+                }
+            });
+    } else if (profileData.recentActivitySnippet) {
+        // Legacy fallback
+        elements.profileActivity.textContent = `"${profileData.recentActivitySnippet}"`;
+        elements.activitySection.classList.remove('hidden');
     } else {
-        elements.aboutSection.classList.add('hidden');
+        elements.activitySection.classList.add('hidden');
     }
+
+    // Profile Summary (About)
+    // We want a "very summary of the profile after detailed analysis"
+    elements.aboutSection.classList.remove('hidden');
+    elements.profileAbout.innerHTML = '<em class="text-xs text-secondary">Generating profile analysis...</em>';
+
+    generateProfileSummary(profileData)
+        .then(summary => {
+            if (elements.profileAbout) elements.profileAbout.textContent = summary;
+        })
+        .catch(err => {
+            console.warn('Profile summary failed:', err);
+            // Fallback to raw About text
+            if (elements.profileAbout) {
+                elements.profileAbout.textContent = profileData.about
+                    ? profileData.about.substring(0, 150) + '...'
+                    : 'No summary available.';
+            }
+        });
 }
 
 /**
@@ -876,6 +823,7 @@ async function handleReadModeClick() {
     }
 
     elements.readModeContent.classList.remove('hidden');
+    elements.readModeContent.classList.add('visible');
     elements.profileSummaryText.innerHTML = '<div class="loading-spinner"></div> Analyzing profile...';
 
     try {
@@ -951,28 +899,68 @@ Keep it professional, concise, and easy to read.`;
  * @param {Object} profileData - Profile data
  * @returns {Promise<string>} Generated message
  */
+
 async function generateMessage(profileData) {
     const prompt = buildPrompt(profileData);
-    const provider = settings.provider;
+    console.log('[SidePanel] Generating message...');
+    return await generateWithProvider(prompt);
+}
 
-    console.log('[SidePanel] Generating with provider:', provider);
+/**
+ * Unified generation helper
+ * @param {string} prompt - User prompt
+ * @param {string} systemPrompt - Optional system prompt
+ * @returns {Promise<string>} Generated text
+ */
+async function generateWithProvider(prompt, systemPrompt = null) {
+    const provider = settings.provider;
 
     switch (provider) {
         case 'gemini-nano':
-            return await generateWithGeminiNano(prompt);
+            return await generateWithGeminiNano(prompt, systemPrompt);
         case 'openai':
-            return await generateWithOpenAI(prompt);
+            return await generateWithOpenAI(prompt, systemPrompt);
         case 'claude':
-            return await generateWithClaude(prompt);
+            return await generateWithClaude(prompt, systemPrompt);
         case 'gemini':
-            return await generateWithGeminiAPI(prompt);
+            return await generateWithGeminiAPI(prompt, systemPrompt);
         case 'groq':
-            return await generateWithGroq(prompt);
+            return await generateWithGroq(prompt, systemPrompt);
         case 'grok':
-            return await generateWithGrok(prompt);
+            return await generateWithGrok(prompt, systemPrompt);
         default:
-            return buildFallbackMessage(profileData);
+            throw new Error('Provider not selected');
     }
+}
+
+/**
+ * Generate summary for About section
+ */
+async function generateProfileSummary(profileData) {
+    const { name, headline, currentCompany, about, experience } = profileData;
+
+    // Construct rich context
+    let context = `Name: ${name}\nHeadline: ${headline}\n`;
+    if (currentCompany) context += `Current Role: ${currentCompany}\n`;
+    if (experience && experience.length) context += `Experience:\n- ${experience.join('\n- ')}\n`;
+    if (about) context += `About: ${about.substring(0, 1000)}\n`;
+
+    const systemPrompt = "You are a professional profile analyst. Summarize this profile in exactly 3 short bullet points (max 15 words each). Focus on key skills and current role. NO intro text, NO 'Based on...', NO fluff. Output ONLY the bullets.";
+
+    return await generateWithProvider(`Analyze this profile:\n${context}`, systemPrompt);
+}
+
+/**
+ * Generate summary for Recent Activity
+ */
+async function generateActivitySummary(activities, name) {
+    if (!activities || activities.length === 0) return "No recent activity found.";
+
+    const context = activities.map((a, i) => `Item ${i + 1}: ${a}`).join('\n\n');
+
+    const systemPrompt = "You are a social media analyst. Summarize the user's recent activity in 1-2 sentences. Identify what key topics they are discussing AND their engagement style (e.g., 'Writing about AI' vs 'Commenting on startup advice'). Mention specific topics.";
+
+    return await generateWithProvider(`Recent activity by ${name || 'User'}:\n${context}`, systemPrompt);
 }
 
 /**
@@ -982,8 +970,11 @@ async function generateWithGeminiNano(prompt) {
     try {
         if (window.ai && window.ai.languageModel) {
             console.log('[SidePanel] Using Chrome AI (Gemini Nano)');
-            const session = await window.ai.languageModel.create();
+            const session = await window.ai.languageModel.create({
+                systemPrompt: "You are a helpful assistant." // Nano implementation varies
+            });
             const result = await session.prompt(prompt);
+            session.destroy(); // Important to cleanup
             return cleanResponse(result);
         }
     } catch (error) {
@@ -1164,7 +1155,7 @@ async function generateWithGrok(prompt) {
  * @returns {string} Prompt
  */
 function buildPrompt(profileData) {
-    const { name, headline, company, recentActivitySnippet, featuredHighlight, about } = profileData;
+    const { name, headline, company, recentActivitySnippet, recentActivities, featuredHighlight, about, experience } = profileData;
 
     let contextSection = '';
 
@@ -1180,12 +1171,18 @@ function buildPrompt(profileData) {
         contextSection += `Current Role/Company: ${company}\n`;
     }
 
+    if (experience && experience.length > 0) {
+        contextSection += `Experience:\n- ${experience.join('\n- ')}\n`;
+    }
+
     if (about) {
         contextSection += `About/Bio: ${about.substring(0, 500)}\n`;
     }
 
-    if (recentActivitySnippet) {
-        contextSection += `Recent Activity Snippet (post/comment): ${recentActivitySnippet}\n`;
+    if (recentActivities && Array.isArray(recentActivities) && recentActivities.length > 0) {
+        contextSection += `Recent Activity (Posts):\n- ${recentActivities.join('\n- ')}\n`;
+    } else if (recentActivitySnippet) {
+        contextSection += `Recent Activity Snippet: ${recentActivitySnippet}\n`;
     }
 
     if (featuredHighlight) {
@@ -1198,9 +1195,9 @@ function buildPrompt(profileData) {
     const learnedSamples = settings.learnedMessages || [];
 
     // Combine samples, prioritizing user written ones, then recent learned ones
-    // Take max 3 manual samples and max 2 learned samples to keep prompt concise
+    // Use up to 5 manual samples (as requested) and keep 2 learned samples for adaptive style
     const examples = [
-        ...userSamples.slice(0, 3),
+        ...userSamples.slice(0, 5),
         ...learnedSamples.slice(-2)
     ];
 
@@ -1355,7 +1352,7 @@ function showGeneratedMessage(message) {
     elements.messageEmpty.classList.add('hidden');
     elements.messageContent.classList.remove('hidden');
 
-    elements.messageText.textContent = message;
+    elements.messageText.value = message;
     elements.messageMeta.textContent = 'Just now';
 }
 
@@ -1363,7 +1360,7 @@ function showGeneratedMessage(message) {
  * Handle copy button click
  */
 async function handleCopyClick() {
-    const message = elements.messageText.textContent || currentGeneratedMessage;
+    const message = elements.messageText.value || currentGeneratedMessage;
     if (!message) return;
 
     try {
@@ -1407,7 +1404,7 @@ async function handleCopyClick() {
  * Safe workflow: Copies to clipboard first, then opens chat window for manual pasting
  */
 async function handleCopyAndOpenChat() {
-    const message = elements.messageText.textContent || currentGeneratedMessage;
+    const message = elements.messageText.value || currentGeneratedMessage;
     if (!message) {
         showToast('No message to copy', 'error');
         return;
@@ -1484,8 +1481,10 @@ async function handleCopyAndOpenChat() {
  * @param {string} text - Status text
  */
 function updateStatus(status, text) {
-    const dot = elements.statusIndicator.querySelector('.status-dot');
-    const statusText = elements.statusIndicator.querySelector('.status-text');
+    const dot = elements.statusIndicator; // The ID is on the dot itself
+    const statusText = elements.rateLimitInfo; // Use the mapped element
+
+    if (!dot || !statusText) return;
 
     dot.className = 'status-dot';
     if (status === 'loading') dot.classList.add('loading');

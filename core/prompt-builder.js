@@ -22,7 +22,7 @@ You must avoid anything that sounds corporate, generic, or AI-generated.`;
      * @returns {string} Complete prompt for message generation
      */
     static buildPrompt(profileData) {
-        const { name, headline, company, recentActivitySnippet, featuredHighlight } = profileData;
+        const { name, headline, company, recentActivities, recentActivitySnippet, featuredHighlight } = profileData;
 
         // Build context section with only available data
         let contextSection = '';
@@ -39,8 +39,11 @@ You must avoid anything that sounds corporate, generic, or AI-generated.`;
             contextSection += `Current Role/Company: ${company}\n`;
         }
 
-        if (recentActivitySnippet) {
-            contextSection += `Recent Activity Snippet (post/comment): ${recentActivitySnippet}\n`;
+        // Handle Array or String for activity
+        if (recentActivities && Array.isArray(recentActivities) && recentActivities.length > 0) {
+            contextSection += `Recent Activity (Posts):\n- ${recentActivities.join('\n- ')}\n`;
+        } else if (recentActivitySnippet) {
+            contextSection += `Recent Activity Snippet: ${recentActivitySnippet}\n`;
         }
 
         if (featuredHighlight) {
@@ -62,7 +65,7 @@ Instructions:
 - Do NOT overpraise or sound fake.
 - Do NOT ask random or generic questions.
 - Only ask a question if it naturally fits the activity shown.
-- If recentActivitySnippet is empty, do NOT invent anything.
+- If recent activity is empty, do NOT invent anything.
   Just write a simple profile-based opener.
 - Avoid corporate phrases like:
   "Hope you're doing well"
@@ -86,15 +89,18 @@ Output ONLY the final LinkedIn message. No explanations, no quotes around the me
      * @returns {string} A simple template-based message
      */
     static buildFallbackMessage(profileData) {
-        const { name, headline, company, recentActivitySnippet, featuredHighlight } = profileData;
+        const { name, headline, company, recentActivities, recentActivitySnippet, featuredHighlight } = profileData;
 
         // Extract first name
         const firstName = name ? name.split(' ')[0] : '';
 
+        // Helper to get latest activity text
+        const latestActivity = (recentActivities && recentActivities.length > 0) ? recentActivities[0] : recentActivitySnippet;
+
         // Generate based on available context
-        if (recentActivitySnippet && recentActivitySnippet.length > 20) {
+        if (latestActivity && latestActivity.length > 20) {
             // Has activity - reference it
-            const activityPreview = recentActivitySnippet.substring(0, 50);
+            const activityPreview = latestActivity.substring(0, 50);
             return `${firstName}, saw your recent post about "${activityPreview}..." - really interesting perspective. Would be great to connect.`;
         }
 
