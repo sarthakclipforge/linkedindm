@@ -602,10 +602,25 @@ async function handleLoadProfile() {
                             await sleep(500);
                         }
 
-                        // Final attempt
-                        return typeof ProfileAnalyzer !== 'undefined'
-                            ? ProfileAnalyzer.analyze(document.body)
-                            : null;
+                        // Final attempt with fallback
+                        let data = typeof ProfileAnalyzer !== 'undefined' ? ProfileAnalyzer.analyze(document.body) : null;
+                        if (data && data.name) return data;
+
+                        // Emergency fallback directly from document.title
+                        let fallbackName = document.title ? document.title.split('|')[0].split('-')[0].trim() : '';
+                        if (fallbackName && !['linkedin', 'feed', 'search'].includes(fallbackName.toLowerCase())) {
+                            return {
+                                profileId: window.location.href.match(/linkedin\.com\/in\/([^/?#]+)/)?.[1] || '',
+                                name: fallbackName,
+                                headline: document.querySelector('.text-body-medium')?.textContent?.trim() || '',
+                                company: '',
+                                recentActivities: [],
+                                experience: [],
+                                about: '',
+                                extractedAt: new Date().toISOString()
+                            };
+                        }
+                        return data;
                     }
                 });
 
@@ -639,7 +654,7 @@ async function handleLoadProfile() {
     } catch (error) {
         console.error('[SidePanel] Load profile error:', error);
         btn.classList.remove('loading');
-        updateStatus('error', 'Load failed');
+        updateStatus('error', error.message || 'Load failed');
         showToast(error.message || 'Failed to load profile', 'error');
     } finally {
         // Reset button after delay

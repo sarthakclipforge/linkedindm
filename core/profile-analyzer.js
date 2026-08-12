@@ -60,17 +60,49 @@ class ProfileAnalyzer {
      */
     static extractName(root) {
         try {
-            // Primary: Look for h1 in the main profile section
-            const h1 = root.querySelector('h1');
-            if (h1 && h1.textContent) {
-                return h1.textContent.trim();
+            // 1. Specific LinkedIn profile name selectors (highest priority)
+            const selectors = [
+                '.text-heading-xlarge',
+                '.pv-top-card--list h1',
+                '.pv-top-card h1',
+                '[data-anonymize="person-name"]',
+                '.ph5 h1',
+                'main h1',
+                'h1.inline'
+            ];
+
+            for (const selector of selectors) {
+                const el = root.querySelector(selector);
+                if (el && el.textContent) {
+                    let text = el.textContent.trim();
+                    // Clean up badges / pronouns / status lines
+                    text = text.split('\n')[0].replace(/·.*$/, '').replace(/\(.*\)/, '').trim();
+                    if (text && !['linkedin', 'feed', 'search', 'jobs', 'messaging', 'notifications'].includes(text.toLowerCase())) {
+                        return text;
+                    }
+                }
             }
 
-            // Fallback: Look for specific profile name classes
-            const nameElement = root.querySelector('.text-heading-xlarge') ||
-                root.querySelector('[data-anonymize="person-name"]');
-            if (nameElement) {
-                return nameElement.textContent.trim();
+            // 2. Scan all h1 elements for valid name
+            const allH1s = root.querySelectorAll('h1');
+            for (const h1 of allH1s) {
+                if (h1 && h1.textContent) {
+                    let text = h1.textContent.trim();
+                    text = text.split('\n')[0].replace(/·.*$/, '').replace(/\(.*\)/, '').trim();
+                    if (text && !['linkedin', 'feed', 'search', 'jobs', 'messaging', 'notifications'].includes(text.toLowerCase())) {
+                        return text;
+                    }
+                }
+            }
+
+            // 3. Guaranteed Fallback: Parse document.title
+            if (typeof document !== 'undefined' && document.title) {
+                let title = document.title;
+                // e.g., "Satya Nadella | LinkedIn" or "Bill Gates - Chairman | LinkedIn"
+                title = title.split('|')[0].split('-')[0].trim();
+                if (title && !['linkedin', 'feed', 'search', 'jobs', 'messaging', 'notifications'].includes(title.toLowerCase())) {
+                    return title;
+                }
             }
 
             return '';
@@ -87,18 +119,21 @@ class ProfileAnalyzer {
      */
     static extractHeadline(root) {
         try {
-            // Primary: Look for the text-body-medium class used for headlines
-            const headlineElement = root.querySelector('.text-body-medium');
-            if (headlineElement && headlineElement.textContent) {
-                return headlineElement.textContent.trim();
-            }
+            const selectors = [
+                '.pv-top-card .text-body-medium',
+                '.pv-text-details__left-panel .text-body-medium',
+                '.text-body-medium[data-anonymize="headline"]',
+                '.text-body-medium',
+                '.pv-top-card--list + div'
+            ];
 
-            // Fallback: Look for headline in the profile header area
-            const headerSection = root.querySelector('.pv-text-details__left-panel');
-            if (headerSection) {
-                const headline = headerSection.querySelector('.text-body-medium');
-                if (headline) {
-                    return headline.textContent.trim();
+            for (const selector of selectors) {
+                const el = root.querySelector(selector);
+                if (el && el.textContent) {
+                    const text = el.textContent.trim();
+                    if (text && text.length > 3) {
+                        return text;
+                    }
                 }
             }
 
